@@ -53,7 +53,7 @@ def get_deepseek_reply(user_message):
         logging.error("Error parsing DeepSeek API response.")
         return "Sorry, unable to get a reply at the moment. Please try again later."
 
-@app.route('/', methods=['GET'])
+@app.route('/', methods=['GET', 'POST'])
 def wechat_verification():
     signature = request.args.get('signature', '')
     timestamp = request.args.get('timestamp', '')
