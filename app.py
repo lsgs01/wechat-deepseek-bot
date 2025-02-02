@@ -27,6 +27,9 @@ if DEEPSEEK_API_KEY is None or WECHAT_TOKEN is None:
 app = Flask(__name__)
 
 def verify_signature(signature, timestamp, nonce):
+    """
+    Verify the signature from WeChat server.
+    """
     # Check if timestamp is within 5 minutes
     current_time = int(time.time())
     if abs(current_time - int(timestamp)) > 300:  # 5 minutes
@@ -37,6 +40,9 @@ def verify_signature(signature, timestamp, nonce):
     return hashlib.sha1(tmp_str).hexdigest() == signature
 
 def get_deepseek_reply(user_message):
+    """
+    Get a reply from DeepSeek API.
+    """
     headers = {"Authorization": f"Bearer {DEEPSEEK_API_KEY}"}
     payload = {
         "model": "deepseek-chat",
@@ -44,7 +50,7 @@ def get_deepseek_reply(user_message):
     }
     try:
         response = requests.post(DEEPSEEK_ENDPOINT, json=payload, headers=headers)
-        response.raise_for_status()
+        response.raise_for_status()  # Check if the request was successful
         return response.json()["choices"][0]["message"]["content"]
     except requests.RequestException as e:
         logging.error(f"DeepSeek API request error: {e}")
@@ -54,23 +60,24 @@ def get_deepseek_reply(user_message):
         return "Sorry, unable to get a reply at the moment. Please try again later."
 
 @app.route('/', methods=['GET', 'POST'])
-def wechat_verification():
-    signature = request.args.get('signature', '')
-    timestamp = request.args.get('timestamp', '')
-    nonce = request.args.get('nonce', '')
-    echostr = request.args.get('echostr', '')
-    logging.info(f"Received GET request: signature={signature}, timestamp={timestamp}, nonce={nonce}, echostr={echostr}")
-    if verify_signature(signature, timestamp, nonce):
-        return echostr
-    else:
-        logging.warning("Signature verification failed.")
-        return 'Verification Failed', 403
-
-@app.route('/wechat', methods=['GET', 'POST'])
 def wechat_handler():
+    """
+    Handle WeChat server verification and user messages.
+    """
     if request.method == 'GET':
-        return wechat_verification()
+        # Handle WeChat server verification
+        signature = request.args.get('signature', '')
+        timestamp = request.args.get('timestamp', '')
+        nonce = request.args.get('nonce', '')
+        echostr = request.args.get('echostr', '')
+        logging.info(f"Received GET request: signature={signature}, timestamp={timestamp}, nonce={nonce}, echostr={echostr}")
+        if verify_signature(signature, timestamp, nonce):
+            return echostr
+        else:
+            logging.warning("Signature verification failed.")
+            return 'Verification Failed', 403
     else:
+        # Handle user messages
         try:
             xml_data = request.data
             logging.info(f"Received POST request data: {xml_data}")
@@ -80,10 +87,12 @@ def wechat_handler():
             to_user = root.find('ToUserName').text
             logging.info(f"User message: {user_message}, From: {from_user}, To: {to_user}")
 
+            # Call DeepSeek API to generate a reply
             ai_reply = get_deepseek_reply(user_message)
             logging.info(f"AI reply: {ai_reply}")
 
-            return f'''
+            # Return XML response to WeChat
+            response_xml = f'''
             <xml>
                 <ToUserName><![CDATA[{from_user}]]></ToUserName>
                 <FromUserName><![CDATA[{to_user}]]></FromUserName>
@@ -92,9 +101,14 @@ def wechat_handler():
                 <Content><![CDATA[{ai_reply}]]></Content>
             </xml>
             '''
+            logging.info(f"Response XML: {response_xml}")
+            return response_xml
         except ET.ParseError:
             logging.error("Error parsing WeChat XML message.")
             return "Sorry, there was an error parsing the message. Please try again later.", 400
+        except Exception as e:
+            logging.error(f"Unexpected error: {e}")
+            return "Sorry, an unexpected error occurred. Please try again later.", 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8000)
