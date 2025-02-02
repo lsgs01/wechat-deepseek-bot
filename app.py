@@ -9,25 +9,27 @@ import logging
 
 app = Flask(__name__)
 
-# 配置日志记录
+# Configure logging
 logging.basicConfig(level=logging.INFO)
 
-# 从环境变量中获取 DeepSeek API 配置
+# Get DeepSeek API configuration from environment variables
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
 DEEPSEEK_ENDPOINT = "https://api.deepseek.com/v1/chat/completions"
 
-# 从环境变量中获取微信 Token
+# Get WeChat Token from environment variables
 WECHAT_TOKEN = os.getenv("WECHAT_TOKEN")
 
-# 检查环境变量是否正确设置
+# Check if environment variables are set correctly
 if DEEPSEEK_API_KEY is None or WECHAT_TOKEN is None:
-    logging.error("DEEPSEEK_API_KEY 或 WECHAT_TOKEN 环境变量未设置，请检查配置。")
-    raise ValueError("DEEPSEEK_API_KEY 或 WECHAT_TOKEN 环境变量未设置，请检查配置。")
+    logging.error("DEEPSEEK_API_KEY or WECHAT_TOKEN environment variable is not set. Please check the configuration.")
+    raise ValueError("DEEPSEEK_API_KEY or WECHAT_TOKEN environment variable is not set. Please check the configuration.")
+
 
 def verify_signature(signature, timestamp, nonce):
     tmp_list = sorted([WECHAT_TOKEN, timestamp, nonce])
     tmp_str = ''.join(tmp_list).encode('utf-8')
     return hashlib.sha1(tmp_str).hexdigest() == signature
+
 
 def get_deepseek_reply(user_message):
     headers = {"Authorization": f"Bearer {DEEPSEEK_API_KEY}"}
@@ -37,19 +39,20 @@ def get_deepseek_reply(user_message):
     }
     try:
         response = requests.post(DEEPSEEK_ENDPOINT, json=payload, headers=headers)
-        response.raise_for_status()  # 检查请求是否成功
+        response.raise_for_status()  # Check if the request was successful
         return response.json()["choices"][0]["message"]["content"]
     except requests.RequestException as e:
-        logging.error(f"DeepSeek API 请求出错: {e}")
-        return "抱歉，暂时无法获取回复，请稍后再试。"
+        logging.error(f"DeepSeek API request error: {e}")
+        return "Sorry, unable to get a reply at the moment. Please try again later."
     except (KeyError, IndexError):
-        logging.error("解析 DeepSeek API 响应出错。")
-        return "抱歉，暂时无法获取回复，请稍后再试。"
+        logging.error("Error parsing DeepSeek API response.")
+        return "Sorry, unable to get a reply at the moment. Please try again later."
+
 
 @app.route('/wechat', methods=['GET', 'POST'])
 def wechat_handler():
     if request.method == 'GET':
-        # 验证服务器
+        # Verify the server
         signature = request.args.get('signature', '')
         timestamp = request.args.get('timestamp', '')
         nonce = request.args.get('nonce', '')
@@ -59,7 +62,7 @@ def wechat_handler():
         else:
             return 'Verification Failed', 403
     else:
-        # 处理用户消息
+        # Process user messages
         try:
             xml_data = request.data
             root = ET.fromstring(xml_data)
@@ -67,10 +70,10 @@ def wechat_handler():
             from_user = root.find('FromUserName').text
             to_user = root.find('ToUserName').text
 
-            # 调用 DeepSeek
+            # Call DeepSeek
             ai_reply = get_deepseek_reply(user_message)
 
-            # 返回 XML 响应
+            # Return XML response
             return f'''
             <xml>
                 <ToUserName><![CDATA[{from_user}]]></ToUserName>
@@ -81,8 +84,9 @@ def wechat_handler():
             </xml>
             '''
         except ET.ParseError:
-            logging.error("解析微信 XML 消息出错。")
-            return "抱歉，消息解析出错，请稍后再试。", 400
+            logging.error("Error parsing WeChat XML message.")
+            return "Sorry, there was an error parsing the message. Please try again later.", 400
+
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8000)
